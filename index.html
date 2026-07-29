@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LCARS-Conky — an LCARS system monitor for Conky</title>
+<meta name="description" content="A Star Trek LCARS-style system monitor for Conky, built in Lua and Cairo.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Antonio:wght@500;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --orange:#FF9C00;
+    --tan:#FFCC99;
+    --lilac:#CC99CC;
+    --blue:#9999FF;
+    --red:#CC6666;
+    --pink:#CC7399;
+    --gold:#F2BF59;
+    --ink:#0D0D14;
+    --bg:#07070B;
+    --panel:#111018;
+    --panel-line:rgba(255,255,255,0.07);
+    --text:#E7E6EE;
+    --text-dim:#9F9CAE;
+    --gap:14px;
+    --radius-outer:28px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html{ scroll-behavior:smooth; }
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *{ animation:none !important; transition:none !important; }
+  }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(153,153,255,0.10), transparent 60%),
+      radial-gradient(900px 500px at 5% 110%, rgba(255,156,0,0.08), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter', system-ui, sans-serif;
+    line-height:1.55;
+  }
+
+  h1,h2,h3,.nav-label,.eyebrow{
+    font-family:'Antonio', 'Inter', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.02em;
+  }
+
+  a{ color:var(--tan); }
+  code, .mono{ font-family:'Space Mono', monospace; }
+
+  pre{
+    background:#000;
+    border:1px solid var(--panel-line);
+    border-radius:10px;
+    padding:14px 16px;
+    overflow-x:auto;
+    font-family:'Space Mono', monospace;
+    font-size:0.86rem;
+    color:#D9D6E8;
+  }
+  :not(pre) > code{
+    background:rgba(255,255,255,0.08);
+    padding:0.12em 0.4em;
+    border-radius:5px;
+    font-size:0.88em;
+  }
+
+  .frame{
+    max-width:1120px;
+    margin:28px auto;
+    padding:0 16px 40px;
+  }
+
+  /* ---- top elbow: rounded stub + header bar, same technique as the
+     widget itself - two same-colour blocks sharing one seamless edge,
+     with the outer corner rounded on the stub only. ---- */
+  .console{
+    display:grid;
+    grid-template-columns:170px 1fr;
+    grid-template-rows:auto auto auto;
+    grid-template-areas:
+      "stub    header"
+      "nav     main"
+      "fstub   footer";
+    gap:var(--gap);
+  }
+
+  .stub{
+    grid-area:stub;
+    background:var(--orange);
+    border-top-left-radius:var(--radius-outer);
+  }
+  .header-bar{
+    grid-area:header;
+    background:var(--orange);
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:16px 22px;
+    flex-wrap:wrap;
+  }
+  .header-bar h1{
+    margin:0;
+    font-size:1.7rem;
+    font-weight:700;
+  }
+  .header-bar .tagline{
+    font-family:'Inter', sans-serif;
+    text-transform:none;
+    font-size:0.82rem;
+    font-weight:500;
+    opacity:0.75;
+    margin-top:2px;
+  }
+  .gh-link{
+    background:var(--ink);
+    color:var(--tan);
+    text-decoration:none;
+    font-family:'Antonio', sans-serif;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    font-size:0.85rem;
+    padding:9px 18px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+  .gh-link:hover{ background:#000; }
+
+  .fstub{
+    grid-area:fstub;
+    background:var(--lilac);
+    border-bottom-left-radius:var(--radius-outer);
+  }
+  .footer-bar{
+    grid-area:footer;
+    background:var(--lilac);
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 20px;
+    font-size:0.78rem;
+    font-weight:600;
+    flex-wrap:wrap;
+  }
+  .footer-bar a{ color:var(--ink); }
+
+  /* ---- sidebar pills / nav (mirrors the widget's own sidebar) ---- */
+  .nav{
+    grid-area:nav;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .nav a{
+    --c:var(--orange);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    background:var(--c);
+    color:var(--ink);
+    text-decoration:none;
+    font-size:0.92rem;
+    font-weight:700;
+    letter-spacing:0.03em;
+    border-radius:999px;
+    padding:16px 10px;
+    flex:1;
+    min-height:56px;
+    transition:transform 0.15s ease, filter 0.15s ease;
+  }
+  .nav a:hover, .nav a:focus-visible{ filter:brightness(1.12); transform:translateX(3px); }
+  .nav a:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  .nav a.active{ box-shadow: inset 0 0 0 3px rgba(255,255,255,0.55); }
+
+  .nav a[data-c="features"]{ --c:var(--blue); }
+  .nav a[data-c="install"]{ --c:var(--tan); }
+  .nav a[data-c="config"]{ --c:var(--gold); }
+  .nav a[data-c="structure"]{ --c:var(--pink); }
+  .nav a[data-c="credits"]{ --c:var(--lilac); }
+
+  /* ---- main content ---- */
+  main{ grid-area:main; display:flex; flex-direction:column; gap:var(--gap); }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-radius:16px;
+    padding:26px 28px;
+  }
+  .panel .eyebrow{
+    font-size:0.78rem;
+    font-weight:700;
+    letter-spacing:0.08em;
+    margin:0 0 6px;
+  }
+  .panel h2{ font-size:1.5rem; margin:0 0 14px; }
+  .panel p{ color:var(--text-dim); margin:0 0 12px; }
+  .panel p:last-child{ margin-bottom:0; }
+
+  .accent-orange .eyebrow{ color:var(--orange); }
+  .accent-blue .eyebrow{ color:var(--blue); }
+  .accent-tan .eyebrow{ color:var(--tan); }
+  .accent-gold .eyebrow{ color:var(--gold); }
+  .accent-pink .eyebrow{ color:var(--pink); }
+  .accent-lilac .eyebrow{ color:var(--lilac); }
+  .accent-orange{ border-top:3px solid var(--orange); }
+  .accent-blue{ border-top:3px solid var(--blue); }
+  .accent-tan{ border-top:3px solid var(--tan); }
+  .accent-gold{ border-top:3px solid var(--gold); }
+  .accent-pink{ border-top:3px solid var(--pink); }
+  .accent-lilac{ border-top:3px solid var(--lilac); }
+
+  .hero-grid{ display:grid; grid-template-columns:1.1fr 1fr; gap:26px; align-items:center; }
+  .hero-grid img{ width:100%; border-radius:12px; display:block; border:1px solid var(--panel-line); }
+
+  .feature-list{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; }
+  .feature-list li{
+    display:flex; align-items:baseline; gap:10px;
+    padding:8px 0;
+    border-bottom:1px solid var(--panel-line);
+    color:var(--text);
+  }
+  .feature-list li::before{
+    content:"";
+    width:10px; height:10px; border-radius:50%;
+    background:var(--blue);
+    flex-shrink:0;
+    transform:translateY(-1px);
+  }
+
+  .steps{ list-style:none; margin:0; padding:0; counter-reset:step; display:flex; flex-direction:column; gap:16px; }
+  .steps li{ counter-increment:step; display:flex; gap:16px; align-items:flex-start; }
+  .steps li::before{
+    content:counter(step);
+    font-family:'Antonio', sans-serif;
+    font-weight:700;
+    font-size:1.1rem;
+    background:var(--tan);
+    color:var(--ink);
+    width:30px; height:30px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .steps li > div{ flex:1; min-width:0; }
+
+  table{ width:100%; border-collapse:collapse; font-size:0.92rem; }
+  th, td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--panel-line); vertical-align:top; }
+  th{ color:var(--gold); font-family:'Antonio', sans-serif; text-transform:uppercase; letter-spacing:0.04em; font-weight:500; }
+
+  .tree{ font-family:'Space Mono', monospace; font-size:0.86rem; color:#D9D6E8; white-space:pre; overflow-x:auto; }
+
+  .disclaimer{
+    font-size:0.85rem;
+    color:var(--text-dim);
+    border-left:3px solid var(--lilac);
+    padding-left:14px;
+  }
+
+  /* ---- responsive: stack into a single column, sidebar becomes a
+     horizontal scrolling pill row ---- */
+  @media (max-width:760px){
+    .console{
+      grid-template-columns:1fr;
+      grid-template-areas:
+        "stub"
+        "header"
+        "nav"
+        "main"
+        "fstub"
+        "footer";
+    }
+    .stub, .fstub{ display:none; }
+    .header-bar{ border-radius:var(--radius-outer) var(--radius-outer) 0 0; }
+    .footer-bar{ border-radius:0 0 var(--radius-outer) var(--radius-outer); }
+    .nav{ flex-direction:row; overflow-x:auto; padding-bottom:2px; }
+    .nav a{ min-width:110px; }
+    .hero-grid{ grid-template-columns:1fr; }
+    .feature-list{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="console">
+    <div class="stub" aria-hidden="true"></div>
+    <header class="header-bar">
+      <div>
+        <h1>LCARS-Conky</h1>
+        <div class="tagline">Star Trek LCARS system monitor for Conky &middot; Lua + Cairo</div>
+      </div>
+      <a class="gh-link" href="https://github.com/wim66/lcars-conky">View on GitHub</a>
+    </header>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="#overview" data-c="overview" class="active">Overview</a>
+      <a href="#features" data-c="features">Features</a>
+      <a href="#install" data-c="install">Install</a>
+      <a href="#config" data-c="config">Config</a>
+      <a href="#structure" data-c="structure">Structure</a>
+      <a href="#credits" data-c="credits">Credits</a>
+    </nav>
+
+    <main>
+      <section id="overview" class="panel accent-orange">
+        <p class="eyebrow">Systems Monitor</p>
+        <h2>A scalable full-system LCARS console, on your desktop</h2>
+        <div class="hero-grid">
+          <div>
+            <p>LCARS-Conky redraws your system stats every second as an LCARS-style
+               console panel: swept elbow brackets, color-coded sidebar pills, and
+               pill-shaped meters, all drawn live with Lua and Cairo &mdash; no
+               static image, no compositor tricks.</p>
+            <p>One panel covers CPU, memory, storage, network throughput, your
+               top processes and a clock, with a cosmetic stardate for good measure.</p>
+          </div>
+          <img src="preview.png" alt="LCARS-Conky widget showing CPU, memory, storage, network, process and clock panels on a dark desktop background">
+        </div>
+      </section>
+
+      <section id="features" class="panel accent-blue">
+        <p class="eyebrow">What it shows</p>
+        <h2>Features</h2>
+        <ul class="feature-list">
+          <li>CPU load bar + per-core meter row</li>
+          <li>Memory usage with used/total readout</li>
+          <li>Storage panel per mount point (/, /home, add more)</li>
+          <li>Network throughput, interface auto-detected</li>
+          <li>Top 5 processes by CPU</li>
+          <li>Clock, date, and a cosmetic stardate</li>
+          <li>One <code>HEIGHT</code> setting resizes the whole panel</li>
+          <li>No blocking I/O in the draw loop</li>
+        </ul>
+      </section>
+
+      <section id="install" class="panel accent-tan">
+        <p class="eyebrow">Get running</p>
+        <h2>Install</h2>
+        <ol class="steps">
+          <li>
+            <div>
+              <p style="margin:0 0 8px;">Clone the repo:</p>
+              <pre>git clone https://github.com/wim66/lcars-conky.git
+cd lcars-conky</pre>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p style="margin:0 0 8px;">Start it directly, or via the included autostart script (which kills any running Conky first):</p>
+              <pre>conky -c conky.conf
+# or
+./autostart.sh</pre>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p style="margin:0;">Add <code>autostart.sh</code> to your desktop environment's session
+                 startup if you want it running automatically on login.</p>
+            </div>
+          </li>
+        </ol>
+        <p style="margin-top:18px;">Needs a Conky build with Lua + Cairo support (<code>conky -v</code> should list <code>Lua</code>).
+           Imlib2 support is optional &mdash; used for the header badge image, with an automatic
+           drawn-badge fallback if it's not compiled in.</p>
+      </section>
+
+      <section id="config" class="panel accent-gold">
+        <p class="eyebrow">Make it yours</p>
+        <h2>Configuring</h2>
+        <p>Most settings live at the top of <code>widget.lua</code>:</p>
+        <table>
+          <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>iface</code></td><td>Network interface for the NET panel &mdash; auto-detected at startup, override if it guesses wrong</td></tr>
+            <tr><td><code>sections</code></td><td>Which panels appear, and in what order</td></tr>
+            <tr><td><code>fs_mount</code></td><td>Mount point for the primary DISK panel</td></tr>
+            <tr><td><code>badge_png</code> / <code>badge_x/y/w/h</code></td><td>Header badge image, positioned independently of the title</td></tr>
+          </tbody>
+        </table>
+        <p style="margin-top:16px;">Resizing is a one-line change in <code>conky.conf</code>:</p>
+        <pre>local HEIGHT = 900   -- try 600 for a compact version</pre>
+        <p>Width is derived from <code>HEIGHT</code> automatically, and the widget scales
+           its whole drawing to fit &mdash; nothing else needs adjusting.</p>
+      </section>
+
+      <section id="structure" class="panel accent-pink">
+        <p class="eyebrow">Under the hood</p>
+        <h2>File structure</h2>
+        <div class="tree">lcars-conky/
+├── conky.conf     Window/Conky settings — HEIGHT is the one knob you turn
+├── widget.lua     Layout: header, sidebar, panels, footer
+├── lcars.lua      Drawing primitives (rounded rects, elbows, pills, bars, text)
+├── data.lua       System data gathering (conky_parse + cheap /proc reads)
+├── Starfleet.png  Header badge image
+├── autostart.sh   Kills any running Conky, relaunches with this config
+└── preview.png</div>
+      </section>
+
+      <section id="credits" class="panel accent-lilac">
+        <p class="eyebrow">Fine print</p>
+        <h2>Credits</h2>
+        <p class="disclaimer">Star Trek and the LCARS design language are the property of Paramount.
+           This is an unofficial, non-commercial fan project made for personal desktop
+           customization &mdash; not affiliated with or endorsed by Paramount or CBS.</p>
+      </section>
+    </main>
+
+    <div class="fstub" aria-hidden="true"></div>
+    <footer class="footer-bar">
+      <span>Arch Linux &middot; Conky &middot; Lua + Cairo</span>
+      <a href="https://github.com/wim66/lcars-conky">github.com/wim66/lcars-conky</a>
+    </footer>
+  </div>
+</div>
+
+<script>
+  // Highlight the sidebar pill matching whichever section is in view.
+  // Purely a navigation aid, not decorative motion - skipped gracefully
+  // if IntersectionObserver isn't available.
+  if ('IntersectionObserver' in window) {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.nav a'));
+    var map = {};
+    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var link = map[entry.target.id];
+        if (!link) return;
+        if (entry.isIntersecting) {
+          links.forEach(function (a) { a.classList.remove('active'); });
+          link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-40% 0px -50% 0px' });
+
+    document.querySelectorAll('main section[id]').forEach(function (s) {
+      observer.observe(s);
+    });
+  }
+</script>
+
+</body>
+</html>
