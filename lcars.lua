@@ -210,26 +210,40 @@ end
 -- readout: a row of thin lit segments rather than a smooth curve, which
 -- keeps it visually consistent with the pills/elbows used everywhere
 -- else in this widget. samples[1] is the oldest value, samples[#samples]
--- the most recent; values are auto-clamped to [0, max_val].
+-- the most recent; values are auto-clamped to [0, max_val]. Only the
+-- outer left/right ends of the whole strip are rounded (matching the
+-- other meter bars) - individual segments inside stay square.
 function M.history_bars(cr, x, y, w, h, samples, max_val, c)
     local n = #samples
     if n == 0 or max_val <= 0 then return end
     local gap = 2
     local bw = (w - gap * (n - 1)) / n
     if bw <= 0 then return end
-    local r = math.min(bw / 2, 2)
+
+    local r = h / 2 -- rounds the strip's outer ends only
+
+    cairo_save(cr)
+    M.rounded_rect_path(cr, x, y, w, h, r, r, r, r)
+    cairo_clip(cr)
 
     for i, v in ipairs(samples) do
         local frac = math.max(0, math.min(1, (v or 0) / max_val))
         local bx = x + (i - 1) * (bw + gap)
-        -- dim full-height backdrop segment (always visible, like an
-        -- unlit LED column), then the lit portion on top
-        M.filled_rect(cr, bx, y, bw, h, M.color.dim, 1, r, r, 0, 0)
+
+        -- dim backdrop segment (always visible, like an unlit LED column)
+        set_rgba(cr, M.color.dim, 1)
+        cairo_rectangle(cr, bx, y, bw, h)
+        cairo_fill(cr)
+
         local bh = h * frac
         if bh > 0 then
-            M.filled_rect(cr, bx, y + (h - bh), bw, bh, c, 1, r, r, 0, 0)
+            set_rgba(cr, c, 1)
+            cairo_rectangle(cr, bx, y + (h - bh), bw, bh)
+            cairo_fill(cr)
         end
     end
+
+    cairo_restore(cr)
 end
 
 return M
