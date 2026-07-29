@@ -104,16 +104,25 @@ function M.uptime()
     return conky_parse("${uptime}")
 end
 
--- purely decorative "stardate" readout in the LCARS house style.
--- Cosmetic only - not a real Star Trek stardate authority, just flavor.
+-- "TNG-style" stardate: same "1000 units per year" mechanic used by the
+-- commonly-cited fan formula (e.g. Ex Astris Scientia), but anchored at
+-- 1966 - the year Star Trek (TOS) first aired - instead of the future
+-- fictional year 2323. That keeps the result positive and in a
+-- TNG-plausible range (this formula's real anchor gives ~41000+ for
+-- 2364; anchoring 60 years earlier lands today in that same neighborhood)
+-- while tying the epoch to something real rather than an arbitrary offset.
+--
+-- Still purely cosmetic flavor text - there is no official stardate
+-- authority, and no anchor makes this a "real" Star Trek stardate.
+local STARDATE_ANCHOR_YEAR = 1966
+
 function M.stardate()
     local t = os.date("*t")
-    -- Cosmetic only: not a real Star Trek stardate authority (those only
-    -- make sense for the 23rd/24th century), just a fun always-positive
-    -- five-digit-ish readout in the house style, e.g. "26214.8".
-    local base = (t.year % 100) * 1000
-    local frac = (t.yday - 1) * (1000 / 365)
-    return string.format("%05.1f", base + frac)
+    local y = t.year
+    local leap = (y % 4 == 0 and (y % 100 ~= 0 or y % 400 == 0))
+    local days_in_year = leap and 366 or 365
+    local sd = (y - STARDATE_ANCHOR_YEAR) * 1000 + (t.yday - 1) / days_in_year * 1000
+    return string.format("%.1f", sd)
 end
 
 return M
