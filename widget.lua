@@ -73,11 +73,13 @@ local W = {
     -- badge_x/badge_y position it independently of everything else in
     -- the header - move it anywhere you like, the title text won't
     -- follow it.
-    badge_png = BASE_DIR .. "Starfleet.png",
+    badge_png = BASE_DIR .. "Starfleet.png", -- Change to "" to show the drawn badge instead of a PNG
     badge_x = 30,
     badge_y = 20,
     badge_w = 80,
     badge_h = 80,
+
+    distro = "LINUX", -- overwritten at startup by /etc/os-release, if readable
 }
 
 -- ---- Conky hooks ----
@@ -86,6 +88,23 @@ function conky_startup()
     if ok_i and iface then W.iface = iface end
     local ok_c, count = pcall(data.detect_cpu_count)
     if ok_c and count then W.cpu_count = math.min(count, 8) end
+
+    local ok_d, distro = pcall(data.detect_distro_name)
+    if ok_d and distro then W.distro = distro:upper() end
+
+    -- cairo_place_image() is a void C function: if the file can't be
+    -- loaded it just logs internally to Conky's own log and returns -
+    -- pcall() around it always reports "ok" either way, so it can't be
+    -- used to detect a missing/bad image. Check the file ourselves,
+    -- once, instead.
+    W.badge_available = false
+    if has_imlib2 and W.badge_png then
+        local f = io.open(W.badge_png, "rb")
+        if f then
+            f:close()
+            W.badge_available = true
+        end
+    end
 end
 
 -- ---- layout helpers ----
@@ -109,10 +128,11 @@ local function section_layout()
 end
 
 -- draws the header badge: Starfleet.png if it exists and imlib2 support is
--- compiled into this Conky build, otherwise falls back to the original
--- drawn badge so the header never ends up with a blank hole.
+-- compiled into this Conky build (checked once at startup, see
+-- conky_startup), otherwise falls back to the drawn badge so the header
+-- never ends up with a blank hole.
 local function draw_header_badge(cr, x, y)
-    if has_imlib2 and W.badge_png then
+    if W.badge_available then
         local ok = pcall(cairo_place_image, W.badge_png, cr, x, y, W.badge_w, W.badge_h, 1)
         if ok then return end
     end
@@ -146,7 +166,7 @@ local function draw_frame(cr, rows)
         lcars.color.lilac)
 
     lcars.text(cr, W.outer + W.sidebar_w + 14, bot - 15,
-        "ARCH LINUX \226\128\162 UPTIME " .. data.uptime(), 12,
+        W.distro .. " \226\128\162 UPTIME " .. data.uptime(), 12,
         lcars.color.ink, 0.85, "left")
 
     -- sidebar pills, one per section, color-matched to its content panel

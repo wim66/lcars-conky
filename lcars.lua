@@ -21,9 +21,10 @@ M.color = {
     red    = { 0.80, 0.40, 0.40 },
     pink   = { 0.80, 0.45, 0.60 },
     gold   = { 0.95, 0.75, 0.35 },
+    yellow = { 0.98, 0.76, 0.12 }, -- Classic TOS yellow badge fill
     black  = { 0.02, 0.02, 0.04 },
-    ink    = { 0.05, 0.05, 0.08 }, -- near-black text on bright bars
-    dim    = { 0.25, 0.20, 0.22 }, -- unfilled part of meter bars
+    ink    = { 0.08, 0.08, 0.10 }, -- Dark outline / star color
+    dim    = { 0.25, 0.20, 0.22 }, -- Unfilled part of meter bars
 }
 
 -- ---- low-level path helper: rectangle with independent corner radii ----
@@ -80,8 +81,6 @@ end
 -- outer corner of the whole bracket is the rounded bend.
 -- vx,vy,vw,vh   = vertical arm rectangle
 -- hx,hy,hw,hh   = horizontal arm rectangle
--- (the two arms should overlap in the square corner area so the union
--- reads as one seamless bracket)
 function M.elbow(cr, corner, vx, vy, vw, vh, hx, hy, hw, hh, c, a)
     local bend = math.min(vw, hh)
     local rtl, rtr, rbr, rbl = 0, 0, 0, 0
@@ -91,8 +90,6 @@ function M.elbow(cr, corner, vx, vy, vw, vh, hx, hy, hw, hh, c, a)
     elseif corner == "bl" then rbl = bend
     end
 
-    -- vertical arm carries the rounded bend only where it sits at that
-    -- same outer corner
     local v_tl, v_tr, v_br, v_bl = 0, 0, 0, 0
     if corner == "tl" or corner == "tr" then
         if corner == "tl" then v_tl = bend else v_tr = bend end
@@ -111,13 +108,6 @@ function M.elbow(cr, corner, vx, vy, vw, vh, hx, hy, hw, hh, c, a)
 end
 
 -- ---- text ----
--- Conky's tolua++ cairo bindings don't let cairo_text_extents() return a
--- table directly - it needs a real cairo_text_extents_t userdata as its
--- 3rd arg, which cairo doesn't expose a constructor for, so Conky adds
--- cairo_text_extents_t:create()/:free() helpers instead. Create ONE such
--- struct here and reuse it for every M.text() call for the widget's whole
--- lifetime (it's just overwritten each call) rather than create/free one
--- every single tick.
 local extents
 local function get_extents()
     if not extents then
@@ -127,7 +117,6 @@ local function get_extents()
     return extents
 end
 
--- align: "left" (default) | "right" | "center"
 function M.text(cr, x, y, str, size, c, a, align, bold)
     str = tostring(str)
     cairo_select_font_face(cr, "sans-serif",
@@ -147,9 +136,6 @@ function M.text(cr, x, y, str, size, c, a, align, bold)
     cairo_show_text(cr, str)
 end
 
--- Rendered width of str at the given size/weight, using the same font
--- selection as M.text(). For laying out something next to text (e.g. a
--- graph that must not overlap it) without guessing a fixed column width.
 function M.text_width(cr, str, size, bold)
     str = tostring(str)
     cairo_select_font_face(cr, "sans-serif",
@@ -162,7 +148,6 @@ function M.text_width(cr, str, size, bold)
 end
 
 -- ---- LCARS meter bar: dim track + filled portion, both pill-shaped ----
--- pct expected 0..100
 function M.bar(cr, x, y, w, h, pct, c)
     pct = math.max(0, math.min(100, pct or 0))
     M.pill(cr, x, y, w, h, M.color.dim, 1)
@@ -170,12 +155,6 @@ function M.bar(cr, x, y, w, h, pct, c)
     local fw = w * (pct / 100)
     if fw <= 0 then return end
 
-    -- Clip to the track's own pill outline, then fill a plain rectangle
-    -- inside it. This guarantees the visible fill always follows the
-    -- track's rounded silhouette exactly, even when fw is small (a
-    -- separately-rounded small rect would need a smaller corner radius
-    -- than the track's, so its square-ish corners poked out past the
-    -- track's curve right at the rounded end).
     cairo_save(cr)
     M.rounded_rect_path(cr, x, y, w, h, h / 2, h / 2, h / 2, h / 2)
     cairo_clip(cr)
@@ -185,10 +164,7 @@ function M.bar(cr, x, y, w, h, pct, c)
     cairo_restore(cr)
 end
 
--- Small filled triangle, centered on (cx, cy), pointing "up" or "down".
--- Drawn as a plain Cairo path rather than a Unicode glyph (e.g. \xE2\x96\xB2)
--- so it always renders identically regardless of which font is installed -
--- some fonts show geometric-shape codepoints as a blank/tofu box.
+-- Small filled triangle
 function M.triangle(cr, cx, cy, size, c, direction)
     local half = size / 2
     cairo_new_path(cr)
@@ -196,7 +172,7 @@ function M.triangle(cr, cx, cy, size, c, direction)
         cairo_move_to(cr, cx - half, cy - half)
         cairo_line_to(cr, cx + half, cy - half)
         cairo_line_to(cr, cx, cy + half)
-    else -- "up"
+    else
         cairo_move_to(cr, cx - half, cy + half)
         cairo_line_to(cr, cx + half, cy + half)
         cairo_line_to(cr, cx, cy - half)
@@ -206,13 +182,7 @@ function M.triangle(cr, cx, cy, size, c, direction)
     cairo_fill(cr)
 end
 
--- Blocky/segmented history graph, in the style of an LCARS "okudagram"
--- readout: a row of thin lit segments rather than a smooth curve, which
--- keeps it visually consistent with the pills/elbows used everywhere
--- else in this widget. samples[1] is the oldest value, samples[#samples]
--- the most recent; values are auto-clamped to [0, max_val]. Only the
--- outer left/right ends of the whole strip are rounded (matching the
--- other meter bars) - individual segments inside stay square.
+-- Blocky/segmented history graph
 function M.history_bars(cr, x, y, w, h, samples, max_val, c)
     local n = #samples
     if n == 0 or max_val <= 0 then return end
@@ -220,7 +190,7 @@ function M.history_bars(cr, x, y, w, h, samples, max_val, c)
     local bw = (w - gap * (n - 1)) / n
     if bw <= 0 then return end
 
-    local r = h / 2 -- rounds the strip's outer ends only
+    local r = h / 2
 
     cairo_save(cr)
     M.rounded_rect_path(cr, x, y, w, h, r, r, r, r)
@@ -230,7 +200,6 @@ function M.history_bars(cr, x, y, w, h, samples, max_val, c)
         local frac = math.max(0, math.min(1, (v or 0) / max_val))
         local bx = x + (i - 1) * (bw + gap)
 
-        -- dim backdrop segment (always visible, like an unlit LED column)
         set_rgba(cr, M.color.dim, 1)
         cairo_rectangle(cr, bx, y, bw, h)
         cairo_fill(cr)
@@ -244,6 +213,100 @@ function M.history_bars(cr, x, y, w, h, samples, max_val, c)
     end
 
     cairo_restore(cr)
+end
+
+-- ---- Starfleet Insignia Badge (Yellow Delta with Command Star in Circle) ----
+-- Draws the classic yellow Starfleet Command badge enclosed in a ring background.
+-- Centered on (cx, cy) with outer radius r.
+function M.badge(cr, cx, cy, r, c, a)
+    a = a or 1
+    local yellow = M.color.yellow
+    local dark = M.color.ink
+
+    -- 1. Outer Ring (enclosing circle)
+    cairo_new_path(cr)
+    cairo_set_line_width(cr, math.max(r * 0.08, 1.8))
+    set_rgba(cr, dark, a)
+    cairo_arc(cr, cx, cy, r * 0.88, 0, 2 * math.pi)
+    cairo_stroke(cr)
+
+    -- 2. Delta Insignia Body (Curved Starfleet Arrowhead)
+    local half = r * 0.62
+    local top_y = cy - r * 0.95
+    local base_y = cy + r * 0.82
+    local notch_y = cy + r * 0.35
+
+    cairo_new_path(cr)
+    cairo_move_to(cr, cx, top_y)
+    -- Right curved outer side
+    cairo_curve_to(cr,
+        cx + half * 0.80, cy - r * 0.25,
+        cx + half * 1.15, base_y - r * 0.25,
+        cx + half, base_y)
+    -- Right inner curve to notch
+    cairo_curve_to(cr,
+        cx + half * 0.38, cy + r * 0.50,
+        cx + r * 0.12, notch_y + r * 0.05,
+        cx, notch_y)
+    -- Left inner curve from notch
+    cairo_curve_to(cr,
+        cx - r * 0.12, notch_y + r * 0.05,
+        cx - half * 0.38, cy + r * 0.50,
+        cx - half, base_y)
+    -- Left curved outer side back to top
+    cairo_curve_to(cr,
+        cx - half * 1.15, base_y - r * 0.25,
+        cx - half * 0.80, cy - r * 0.25,
+        cx, top_y)
+    cairo_close_path(cr)
+
+    -- Fill Yellow Delta
+    set_rgba(cr, yellow, a)
+    cairo_fill_preserve(cr)
+
+    -- Dark Outline on Delta
+    cairo_set_line_width(cr, math.max(r * 0.07, 1.5))
+    set_rgba(cr, dark, a)
+    cairo_stroke(cr)
+
+    -- 3. Command Star in Center
+    local star_cx = cx
+    local star_cy = cy - r * 0.05
+    local outer_r = r * 0.28
+    local inner_r = r * 0.11
+
+    cairo_new_path(cr)
+    for i = 0, 4 do
+        -- Outer point
+        local angle_out = (i * 72 - 90) * math.pi / 180
+        local x_out = star_cx + math.cos(angle_out) * outer_r
+        local y_out = star_cy + math.sin(angle_out) * outer_r
+        if i == 0 then
+            cairo_move_to(cr, x_out, y_out)
+        else
+            cairo_line_to(cr, x_out, y_out)
+        end
+
+        -- Inner point
+        local angle_in = (i * 72 + 36 - 90) * math.pi / 180
+        local x_in = star_cx + math.cos(angle_in) * inner_r
+        local y_in = star_cy + math.sin(angle_in) * inner_r
+        cairo_line_to(cr, x_in, y_in)
+    end
+    cairo_close_path(cr)
+
+    -- Fill main star shape
+    set_rgba(cr, dark, a)
+    cairo_fill(cr)
+    
+    -- Elongated top spike of the star
+    local spike_top = star_cy - r * 0.42
+    cairo_new_path(cr)
+    cairo_move_to(cr, star_cx, spike_top)
+    cairo_line_to(cr, star_cx + inner_r * 0.6, star_cy - inner_r)
+    cairo_line_to(cr, star_cx - inner_r * 0.6, star_cy - inner_r)
+    cairo_close_path(cr)
+    cairo_fill(cr)
 end
 
 return M

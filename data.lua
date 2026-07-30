@@ -47,6 +47,25 @@ function M.detect_cpu_count()
     return (n > 0) and n or 4
 end
 
+-- one-time (called from conky_startup): distro display name from
+-- /etc/os-release, so the footer doesn't hardcode "Arch Linux".
+function M.detect_distro_name()
+    local f = io.open("/etc/os-release", "r")
+    if not f then return "Linux" end
+    local name, pretty
+    for line in f:lines() do
+        local k, v = line:match("^(%u+)=(.*)$")
+        if k and v then
+            v = v:gsub('^"(.*)"$', "%1") -- strip surrounding quotes if present
+            if k == "PRETTY_NAME" then pretty = v
+            elseif k == "NAME" then name = v
+            end
+        end
+    end
+    f:close()
+    return pretty or name or "Linux"
+end
+
 function M.cpu_overall()
     return parse_num(conky_parse("${cpu}"))
 end
@@ -104,25 +123,16 @@ function M.uptime()
     return conky_parse("${uptime}")
 end
 
--- "TNG-style" stardate: same "1000 units per year" mechanic used by the
--- commonly-cited fan formula (e.g. Ex Astris Scientia), but anchored at
--- 1966 - the year Star Trek (TOS) first aired - instead of the future
--- fictional year 2323. That keeps the result positive and in a
--- TNG-plausible range (this formula's real anchor gives ~41000+ for
--- 2364; anchoring 60 years earlier lands today in that same neighborhood)
--- while tying the epoch to something real rather than an arbitrary offset.
---
--- Still purely cosmetic flavor text - there is no official stardate
--- authority, and no anchor makes this a "real" Star Trek stardate.
-local STARDATE_ANCHOR_YEAR = 1966
-
+-- purely decorative "stardate" readout in the LCARS house style.
+-- Cosmetic only - not a real Star Trek stardate authority, just flavor.
 function M.stardate()
     local t = os.date("*t")
-    local y = t.year
-    local leap = (y % 4 == 0 and (y % 100 ~= 0 or y % 400 == 0))
-    local days_in_year = leap and 366 or 365
-    local sd = (y - STARDATE_ANCHOR_YEAR) * 1000 + (t.yday - 1) / days_in_year * 1000
-    return string.format("%.1f", sd)
+    -- Cosmetic only: not a real Star Trek stardate authority (those only
+    -- make sense for the 23rd/24th century), just a fun always-positive
+    -- five-digit-ish readout in the house style, e.g. "26214.8".
+    local base = (t.year % 100) * 1000
+    local frac = (t.yday - 1) * (1000 / 365)
+    return string.format("%05.1f", base + frac)
 end
 
 return M
